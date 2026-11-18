@@ -1,104 +1,93 @@
 #!/usr/bin/env sh
 set -eu
-
-tests_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repo=$(dirname "$tests_dir")
-skill="$repo/skills/project-harness"
-temp="$tests_dir/.tmp-tests-sh"
-
+skill=$(CDPATH= cd -- "$(dirname -- "$0")/../skills/project-harness" && pwd)
+parent=$(CDPATH= cd -- "${TMPDIR:-/tmp}" && pwd -P)
+temp=$(mktemp -d "$parent/project-harness-test-XXXXXXXX")
 cleanup() {
-  case "$temp" in "$repo"/*) rm -rf "$temp" ;; *) printf 'Unsafe test path: %s\n' "$temp" >&2; exit 1 ;; esac
+  actual=$(CDPATH= cd -- "$temp" && pwd -P) || return 1
+  [ "$actual" = "$temp" ] && [ "$(dirname -- "$actual")" = "$parent" ] || return 1
+  case "$(basename -- "$actual")" in project-harness-test-????????) rm -rf -- "$actual" ;; *) return 1 ;; esac
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+init() { sh "$skill/scripts/init-project.sh" "$@" >/dev/null; }
+update() { sh "$skill/scripts/update-project.sh" "$@" >/dev/null; }
+validate() { sh "$skill/scripts/validate-project.sh" "$1" >/dev/null; }
+inspect() { sh "$skill/scripts/inspect-project.sh" "$@"; }
+testgit() { git -C "$temp" -c user.name='Harness tests' -c user.email=tests@example.invalid "$@"; }
 
-fingerprint() {
-  directory="$1"
-  find "$directory" -type f -exec cksum {} \; | sort
-}
-
-cleanup
-mkdir -p "$temp/new-en" "$temp/new-zh" "$temp/v1/docs" "$temp/v1/prompts" "$temp/partial/docs" "$temp/custom/project" "$temp/invalid"
-
-printf '# Existing Harness\n\nCustom project fact: KEEP-ME\n' > "$temp/v1/HARNESS.md"
-printf '# Existing Instructions\n\nCustom rule: KEEP-AGENT\n' > "$temp/v1/AGENTS.md"
-printf '# Old tasks\n\nTASK-CONTENT\n' > "$temp/v1/docs/tasks.md"
-printf '# Old decisions\n\nDECISION-CONTENT\n' > "$temp/v1/docs/decisions.md"
-printf '# Product\n\nPRODUCT-CONTENT\n' > "$temp/v1/docs/product.md"
-printf '# Legacy SOP\n\nSOP-CONTENT\n' > "$temp/v1/docs/sop.md"
-printf '# Legacy prompt\n\nPROMPT-CONTENT\n' > "$temp/v1/prompts/master.md"
-printf '# Existing tasks\n\nPARTIAL-TASK-CONTENT\n' > "$temp/partial/TASKS.md"
-printf '# Existing product\n\nPARTIAL-PRODUCT-CONTENT\n' > "$temp/partial/docs/product.md"
-printf '# Custom tasks\n\nCUSTOM-TASK-CONTENT\n' > "$temp/custom/project/work-items.md"
-printf '# Custom decisions\n\nCUSTOM-DECISION-CONTENT\n' > "$temp/custom/project/choices.md"
-cat > "$temp/custom/HARNESS.md" <<'EOF'
-# Existing Harness
-
-<!-- project-harness:managed:start -->
-## Harness Protocol
-
-- Protocol: 2
-- Tasks: `project/work-items.md`
-- Decisions: `project/choices.md`
-<!-- project-harness:managed:end -->
-EOF
-
-sh "$skill/scripts/init-project.sh" --project-path "$temp/new-en" --language en
-sh "$skill/scripts/init-project.sh" --project-path "$temp/new-zh" --language zh-CN
-
-for name in new-en new-zh; do
-  count=$(find "$temp/$name" -type f | wc -l | tr -d ' ')
-  [ "$count" -eq 4 ] || { printf '%s should contain four files, found %s\n' "$name" "$count" >&2; exit 1; }
-  sh "$skill/scripts/validate-project.sh" "$temp/$name"
-  case "$name" in new-zh) language=zh-CN ;; *) language=en ;; esac
-  for ledger in tasks decisions; do
-    cmp -s "$temp/$name/docs/$ledger.md" "$skill/assets/minimal-project/$language/docs/$ledger.md" ||
-      { printf '%s did not copy the %s template for %s\n' "$name" "$ledger" "$language" >&2; exit 1; }
-  done
+for lang in en zh-CN; do
+  mkdir "$temp/$lang"
+  init --project-path "$temp/$lang" --language "$lang"
+  init --project-path "$temp/$lang" --language "$lang"
+  [ "$(find "$temp/$lang" -type f | wc -l | tr -d ' ')" = 1 ] || fail 'Empty project gained extra files'
+  cmp "$temp/$lang/HARNESS.md" "$skill/assets/minimal-project/$lang/HARNESS.md"
 done
 
-sh "$skill/scripts/init-project.sh" --project-path "$temp/partial" --language en
-[ ! -f "$temp/partial/docs/tasks.md" ] || { printf 'Partial adoption duplicated TASKS.md\n' >&2; exit 1; }
-[ -f "$temp/partial/docs/decisions.md" ] || { printf 'Partial adoption did not create decisions\n' >&2; exit 1; }
-sh "$skill/scripts/inspect-project.sh" "$temp/partial" | grep -F 'tasks=TASKS.md' >/dev/null
-sh "$skill/scripts/inspect-project.sh" "$temp/partial" | grep -F 'decisions=docs/decisions.md' >/dev/null
-grep -F 'PARTIAL-TASK-CONTENT' "$temp/partial/TASKS.md" >/dev/null
-fingerprint "$temp/partial" > "$temp/partial-first.cksum"
-sh "$skill/scripts/init-project.sh" --project-path "$temp/partial" --language en
-fingerprint "$temp/partial" > "$temp/partial-second.cksum"
-cmp -s "$temp/partial-first.cksum" "$temp/partial-second.cksum" || { printf 'Partial adoption is not idempotent\n' >&2; exit 1; }
+project="$temp/sample"
+mkdir -p "$project/docs" "$temp/legacy"
+printf 'Existing team rules\r\n' > "$project/AGENTS.md"
+printf 'Project guide\n' > "$project/README.md"
+printf 'Package ready, deployment pending.\n' > "$project/docs/work items.md"
+cp "$project/AGENTS.md" "$temp/original-team"
+init --project-path "$project" --source 'docs/work items.md'
+cmp "$temp/original-team" "$project/AGENTS.md"
+[ ! -e "$project/docs/decisions.md" ] || fail 'Empty ledger created'
+cp "$project/HARNESS.md" "$temp/first"
+update --project-path "$project" --source 'docs/work items.md'
+cmp "$temp/first" "$project/HARNESS.md"
 
-sh "$skill/scripts/init-project.sh" --project-path "$temp/custom" --language en
-[ ! -f "$temp/custom/docs/tasks.md" ] || { printf 'Custom task mapping was duplicated\n' >&2; exit 1; }
-[ ! -f "$temp/custom/docs/decisions.md" ] || { printf 'Custom decision mapping was duplicated\n' >&2; exit 1; }
-sh "$skill/scripts/inspect-project.sh" "$temp/custom" | grep -F 'tasks=project/work-items.md' >/dev/null
-sh "$skill/scripts/inspect-project.sh" "$temp/custom" | grep -F 'decisions=project/choices.md' >/dev/null
-grep -F 'CUSTOM-TASK-CONTENT' "$temp/custom/project/work-items.md" >/dev/null
-grep -F 'CUSTOM-DECISION-CONTENT' "$temp/custom/project/choices.md" >/dev/null
-fingerprint "$temp/custom" > "$temp/custom-first.cksum"
-sh "$skill/scripts/init-project.sh" --project-path "$temp/custom" --language en
-fingerprint "$temp/custom" > "$temp/custom-second.cksum"
-cmp -s "$temp/custom-first.cksum" "$temp/custom-second.cksum" || { printf 'Custom mapped adoption is not idempotent\n' >&2; exit 1; }
+printf '%s\r\n' '# Map' 'Team agreements.' '- [tasks](docs/work%20items.md#today)' '- [tracker](https://example.org/items)' 'Example `[ignore](missing.txt)`.' '```md' '[ignore](missing.md)' > "$project/HARNESS.md"
+printf '%s' '```' >> "$project/HARNESS.md"
+cp "$project/HARNESS.md" "$temp/custom"
+printf 'Acceptance\n' > "$project/docs/验收 [1] (draft)#.md"
+update --project-path "$project" --source 'docs/验收 [1] (draft)#.md' --source 'docs/work items.md'
+head -c "$(wc -c < "$temp/custom")" "$project/HARNESS.md" | cmp - "$temp/custom"
+od -An -tu1 -v "$project/HARNESS.md" | awk '{ for (i=1; i<=NF; i++) { if ($i==10 && prev!=13) exit 1; prev=$i } }' || fail 'CRLF not preserved'
+cp "$project/HARNESS.md" "$temp/first"
+update --project-path "$project" --source 'docs/验收 [1] (draft)#.md'
+cmp "$temp/first" "$project/HARNESS.md"
+if update --project-path "$project" --source README.md --source missing.md 2>/dev/null; then fail 'Missing input accepted'; fi
+cmp "$temp/first" "$project/HARNESS.md"
 
-sh "$skill/scripts/update-project.sh" --project-path "$temp/invalid" --language en
-if sh "$skill/scripts/validate-project.sh" "$temp/invalid"; then
-  printf 'Validation accepted unresolved task and decision mappings\n' >&2
-  exit 1
-fi
+legacy="$temp/legacy"
+printf 'Conventional alternative\n' > "$legacy/TASKS.md"
+printf 'Actual source\n' > "$legacy/custom.md"
+cat > "$legacy/HARNESS.md" <<'MAP'
+# Old map
+<!-- project-harness:managed:start -->
+- Tasks: `custom.md`
+- Decisions: (not mapped)
+<!-- project-harness:managed:end -->
+MAP
+cp "$legacy/HARNESS.md" "$temp/legacy-original"
+init --project-path "$legacy"
+cmp "$temp/legacy-original" "$legacy/HARNESS.md"
+rm "$legacy/custom.md"
+if validate "$legacy" 2>/dev/null; then fail 'Broken legacy link accepted'; fi
+inspect "$legacy" | grep -Fqx 'tasks=custom.md' || fail 'Broken mapping redirected'
 
-sh "$skill/scripts/update-project.sh" --project-path "$temp/v1" --language en
-fingerprint "$temp/v1" > "$temp/first.cksum"
-sh "$skill/scripts/update-project.sh" --project-path "$temp/v1" --language en
-fingerprint "$temp/v1" > "$temp/second.cksum"
-cmp -s "$temp/first.cksum" "$temp/second.cksum" || { printf 'V1 update is not idempotent\n' >&2; exit 1; }
-
-sh "$skill/scripts/validate-project.sh" "$temp/v1"
-sh "$skill/scripts/inspect-project.sh" "$temp/v1" | grep -F 'protocol=2' >/dev/null
-
-grep -F 'KEEP-ME' "$temp/v1/HARNESS.md" >/dev/null
-grep -F 'KEEP-AGENT' "$temp/v1/AGENTS.md" >/dev/null
-grep -F 'TASK-CONTENT' "$temp/v1/docs/tasks.md" >/dev/null
-grep -F 'DECISION-CONTENT' "$temp/v1/docs/decisions.md" >/dev/null
-grep -F 'SOP-CONTENT' "$temp/v1/docs/sop.md" >/dev/null
-grep -F 'PROMPT-CONTENT' "$temp/v1/prompts/master.md" >/dev/null
-
-printf 'PASS: Project Harness POSIX shell tests\n'
+testgit init -q
+testgit add -- sample
+testgit commit -qm 'Shared handoff'
+shared=$(testgit rev-parse HEAD)
+printf 'Deployment verified, business check pending.\n' > "$project/docs/work items.md"
+printf 'Local receipt\n' > "$project/docs/local only.md"
+update --project-path "$project" --source 'docs/local only.md'
+check_record() { grep -Fqx -e "$(printf 'handoff_record=%s\t%s' "$1" "$2")" "$temp/inspection" || fail "$1 $2"; }
+inspect "$project" --handoff-revision "$shared" > "$temp/inspection"
+check_record differs-from-revision 'docs/work items.md'
+check_record absent-from-revision 'docs/local only.md'
+check_record matches-revision 'docs/验收 [1] (draft)#.md'
+check_record verify-separately 'https://example.org/items'
+if inspect "$project" --handoff-revision nonexistent-revision >/dev/null 2>&1; then fail 'Invalid ref accepted'; fi
+testgit add -- sample
+testgit commit -qm 'Verified deployment'
+inspect "$project" --handoff-revision HEAD > "$temp/inspection"
+check_record matches-revision 'docs/work items.md'
+inspect "$project" --handoff-revision "$shared" > "$temp/inspection"
+check_record differs-from-revision 'docs/work items.md'
+printf '%s\n' '# Map' '- [missing](broken.md)' > "$project/HARNESS.md"
+if validate "$project" 2>/dev/null; then fail 'Missing Markdown link accepted'; fi
+printf 'PASS: POSIX adoption, file preservation, link checks and handoff revisions\n'

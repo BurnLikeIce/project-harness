@@ -1,8 +1,10 @@
-param(
-    [string]$ProjectPath = (Get-Location).Path
+﻿param(
+    [string]$ProjectPath = (Get-Location).Path,
+    [string]$HandoffRevision
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/map-targets.ps1"
 $project = (Resolve-Path -LiteralPath $ProjectPath).Path
 
 function Find-MappedExisting {
@@ -24,11 +26,7 @@ function Find-MappedExisting {
 
     $mapped = $match.Groups[1].Value.Trim().Trim([char[]]'`')
     if ($mapped -eq '(not mapped)') { return $null }
-    $mappedPath = if ([IO.Path]::IsPathRooted($mapped)) { $mapped } else { Join-Path $project $mapped }
-    if (Test-Path -LiteralPath $mappedPath -PathType Leaf) {
-        return $mapped.Replace('\', '/')
-    }
-    return $null
+    return $mapped.Replace('\', '/')
 }
 
 function Find-FirstExisting {
@@ -85,18 +83,22 @@ $git = [ordered]@{
     remote     = $null
 }
 
+function Get-GitValue([string[]]$Arguments) {
+    # Windows PowerShell also sends expected Git lookup failures to its error stream.
+    $ErrorActionPreference = 'Continue'
+    $value = & git -C $project @Arguments 2>$null
+    if ($LASTEXITCODE -eq 0) { $value }
+}
 if (Get-Command git -ErrorAction SilentlyContinue) {
-    $inside = (& git -C $project rev-parse --is-inside-work-tree 2>$null)
-    if ($LASTEXITCODE -eq 0 -and $inside -eq 'true') {
+    if ((Get-GitValue @('rev-parse','--is-inside-work-tree')) -eq 'true') {
         $git.repository = $true
-        $git.branch = (& git -C $project branch --show-current 2>$null)
-        $git.dirty = [bool](& git -C $project status --porcelain 2>$null)
-        $git.remote = (& git -C $project remote get-url origin 2>$null)
-        if ($LASTEXITCODE -ne 0) { $git.remote = $null }
+        $git.branch = Get-GitValue @('branch','--show-current')
+        $git.dirty = [bool](Get-GitValue @('--no-optional-locks','status','--porcelain'))
+        $git.remote = Get-GitValue @('remote','get-url','origin')
     }
 }
 
-[ordered]@{
+$inspection = [ordered]@{
     projectPath = $project
     protocol    = $protocol
     harnessFile = if (Test-Path -LiteralPath $harnessPath -PathType Leaf) { 'HARNESS.md' } else { $null }
@@ -104,4 +106,34 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     sources     = $sources
     legacyFiles = $legacyFiles
     git         = $git
-} | ConvertTo-Json -Depth 5
+}
+if ($HandoffRevision) {
+    if (-not $git.repository) { throw 'Choose a Git checkout to compare a handoff revision.' }
+    if (-not [IO.File]::Exists($harnessPath)) { throw 'Missing project map: HARNESS.md' }
+    $commit = Get-GitValue @('rev-parse','--verify','--end-of-options',"$HandoffRevision^{commit}")
+    if (-not $commit) { throw "Unknown handoff revision: $HandoffRevision" }
+    $prefix = [string](& git -C $project rev-parse --show-prefix)
+    $records = foreach ($entry in @('HARNESS.md') + @(Get-MapTargets $harnessPath) | Select-Object -Unique) {
+        $relative = $entry -replace '^(\./)+', ''
+        if ((Test-ExternalMapTarget $relative) -or $relative -match '(^|/)\.\.(/|$)') {
+            $state = 'verify-separately'
+        } elseif (-not (Test-Path -LiteralPath (Join-Path $project $relative))) {
+            $state = 'missing-locally'
+        } elseif (-not [IO.File]::Exists((Join-Path $project $relative)) -or
+            ((Get-Item -LiteralPath (Join-Path $project $relative) -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            $state = 'verify-separately'
+        } else {
+            $recorded = Get-GitValue @('rev-parse','--verify',"$($commit):$prefix$relative")
+            if (-not $recorded) {
+                $state = 'absent-from-revision'
+            } else {
+                $working = & git -C $project hash-object -- $relative
+                if ($LASTEXITCODE -ne 0) { throw "Could not read $relative" }
+                $state = if ($working -eq $recorded) { 'matches-revision' } else { 'differs-from-revision' }
+            }
+        }
+        [ordered]@{ path = $entry; state = $state }
+    }
+    $inspection.handoff = [ordered]@{ revision = $HandoffRevision; commit = $commit; records = @($records) }
+}
+$inspection | ConvertTo-Json -Depth 5

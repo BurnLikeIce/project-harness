@@ -1,124 +1,68 @@
 param(
     [string]$ProjectPath = (Get-Location).Path,
-    [ValidateSet('en', 'zh-CN')]
-    [string]$Language = 'en'
+    [ValidateSet('en', 'zh-CN')][string]$Language = 'en',
+    [string[]]$Source = @()
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/map-targets.ps1"
 $project = (Resolve-Path -LiteralPath $ProjectPath).Path
-$skillRoot = Split-Path -Parent $PSScriptRoot
-$templateRoot = Join-Path $skillRoot "assets\minimal-project\$Language"
-$managedRoot = Join-Path $skillRoot "assets\managed\$Language"
-
-if (-not (Test-Path -LiteralPath $templateRoot -PathType Container)) {
-    throw "Template root not found: $templateRoot"
+$map = Join-Path $project 'HARNESS.md'
+$validate = Join-Path $PSScriptRoot 'validate-project.ps1'
+if ([IO.File]::Exists($map) -and -not $Source.Count) {
+    & $validate -ProjectPath $project
+    return
 }
 
-function Find-MappedExisting {
-    param([string]$Pattern)
-
-    $harnessPath = Join-Path $project 'HARNESS.md'
-    if (-not (Test-Path -LiteralPath $harnessPath -PathType Leaf)) { return $null }
-
-    $text = [IO.File]::ReadAllText($harnessPath)
-    $managed = [regex]::Match(
-        $text,
-        '<!-- project-harness:managed:start -->(.*?)<!-- project-harness:managed:end -->',
-        [Text.RegularExpressions.RegexOptions]::Singleline
-    )
-    if (-not $managed.Success) { return $null }
-
-    $match = [regex]::Match($managed.Groups[1].Value, $Pattern, [Text.RegularExpressions.RegexOptions]::Multiline)
-    if (-not $match.Success) { return $null }
-
-    $mapped = $match.Groups[1].Value.Trim().Trim([char[]]'`')
-    if ($mapped -eq '(not mapped)') { return $null }
-    $mappedPath = if ([IO.Path]::IsPathRooted($mapped)) { $mapped } else { Join-Path $project $mapped }
-    if (Test-Path -LiteralPath $mappedPath -PathType Leaf) {
-        return $mapped.Replace('\', '/')
-    }
-    return $null
-}
-
-function Find-FirstExisting {
-    param(
-        [string[]]$Candidates,
-        [string]$MappingPattern
-    )
-
-    $mapped = Find-MappedExisting -Pattern $MappingPattern
-    if ($mapped) { return $mapped }
-
-    foreach ($candidate in $Candidates) {
-        if (Test-Path -LiteralPath (Join-Path $project $candidate) -PathType Leaf) {
-            return $candidate
+$lock = Join-Path $project '.project-harness-write.lock'
+New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
+$tempMap = Join-Path $lock 'HARNESS.md'
+try {
+    $exists = Test-Path -LiteralPath $map
+    if ($exists) { & $validate -ProjectPath $project }
+    $candidates = @(
+        if (-not $exists) {
+            'AGENTS.md', 'README.md' | Where-Object { [IO.File]::Exists((Join-Path $project $_)) }
         }
-    }
-    return $null
-}
-
-function Copy-MissingFile {
-    param([string]$RelativePath)
-
-    $source = Join-Path $templateRoot $RelativePath
-    $destination = Join-Path $project $RelativePath
-    if (Test-Path -LiteralPath $destination) {
-        Write-Output "SKIP existing: $RelativePath"
-        return
-    }
-
-    $parent = Split-Path -Parent $destination
-    if (-not (Test-Path -LiteralPath $parent)) {
-        New-Item -ItemType Directory -Path $parent | Out-Null
-    }
-    Copy-Item -LiteralPath $source -Destination $destination
-    Write-Output "CREATE: $RelativePath"
-}
-
-function Set-ManagedBlock {
-    param(
-        [string]$Path,
-        [string]$Heading,
-        [string]$Block
+        $Source
     )
-
-    $start = '<!-- project-harness:entry:start -->'
-    $end = '<!-- project-harness:entry:end -->'
-    $current = if (Test-Path -LiteralPath $Path) { [IO.File]::ReadAllText($Path) } else { "$Heading`n" }
-    $newline = if ($current.Contains("`r`n")) { "`r`n" } else { "`n" }
-    $normalizedBlock = $Block -replace "`r?`n", $newline
-    $pattern = [regex]::Escape($start) + '.*?' + [regex]::Escape($end)
-
-    if ([regex]::IsMatch($current, $pattern, [Text.RegularExpressions.RegexOptions]::Singleline)) {
-        $updated = [regex]::Replace($current, $pattern, $normalizedBlock, [Text.RegularExpressions.RegexOptions]::Singleline)
+    $known = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    if ($exists) { foreach ($entry in Get-MapTargets $map) { [void]$known.Add($entry) } }
+    $links = @(foreach ($candidate in $candidates) {
+        $relative = ($candidate -replace '\\', '/' -replace '^(\./)+', '')
+        if (-not $relative -or (Test-ExternalMapTarget $relative) -or
+            $relative -match '(^|/)\.\.(/|$)|[\r\n]' -or
+            -not [IO.File]::Exists((Join-Path $project $relative))) {
+            throw "Expected an existing project-relative source file: $candidate"
+        }
+        if ($known.Add($relative)) {
+            $label = $relative.Replace('[', '\[').Replace(']', '\]')
+            $url = $relative.Replace('%', '%25').Replace('#', '%23').Replace('<', '%3C').Replace('>', '%3E')
+            "- [$label](<$url>)"
+        }
+    })
+    if (-not $exists) {
+        $template = Join-Path $PSScriptRoot "../assets/minimal-project/$Language/HARNESS.md"
+        [IO.File]::Copy($template, $tempMap)
+        $destination = $tempMap
     } else {
-        $updated = $current.TrimEnd() + $newline + $newline + $normalizedBlock + $newline
+        $destination = $map
     }
-
-    if ($updated -cne $current) {
-        [IO.File]::WriteAllText($Path, $updated, [Text.UTF8Encoding]::new($false))
-        Write-Output "UPDATE: AGENTS.md"
-    } else {
-        Write-Output "UNCHANGED: AGENTS.md"
+    if ($links.Count) {
+        if ((Get-Item -LiteralPath $destination -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw 'Edit the shared link target explicitly before adding sources.'
+        }
+        $bytes = [IO.File]::ReadAllBytes($destination)
+        $utf8 = [Text.UTF8Encoding]::new($false, $true)
+        $original = $utf8.GetString($bytes)
+        if ($original.Contains([char]0)) { throw 'Edit this map in its existing text encoding.' }
+        $newline = if ($original.Contains("`r`n")) { "`r`n" } else { "`n" }
+        $separator = if ($original.EndsWith("`n")) { $newline } else { $newline + $newline }
+        [IO.File]::AppendAllText($destination, $separator + ($links -join $newline) + $newline, $utf8)
     }
+    if (-not $exists) { [IO.File]::Move($tempMap, $map) }
+    & $validate -ProjectPath $project
+} finally {
+    if ([IO.File]::Exists($tempMap)) { [IO.File]::Delete($tempMap) }
+    [IO.Directory]::Delete($lock)
 }
-
-Copy-MissingFile 'HARNESS.md'
-if (-not (Find-FirstExisting -Candidates @('docs/tasks.md', 'TASKS.md', 'docs/task.md') -MappingPattern '^\s*-\s*(?:Tasks|任务记录)\s*[:：]\s*(.+?)\s*$')) {
-    Copy-MissingFile 'docs/tasks.md'
-} else {
-    Write-Output 'REUSE existing task source'
-}
-if (-not (Find-FirstExisting -Candidates @('docs/decisions.md', 'DECISIONS.md', 'docs/decision-log.md') -MappingPattern '^\s*-\s*(?:Decisions|决策记录)\s*[:：]\s*(.+?)\s*$')) {
-    Copy-MissingFile 'docs/decisions.md'
-} else {
-    Write-Output 'REUSE existing decision source'
-}
-
-$heading = '# Agent Instructions'
-$block = [IO.File]::ReadAllText((Join-Path $managedRoot 'agents-block.md')).TrimEnd()
-
-Set-ManagedBlock -Path (Join-Path $project 'AGENTS.md') -Heading $heading -Block $block
-& (Join-Path $PSScriptRoot 'update-project.ps1') -ProjectPath $project -Language $Language
-& (Join-Path $PSScriptRoot 'validate-project.ps1') -ProjectPath $project
-Write-Output "Project Harness 2 initialized or adopted at: $project"
