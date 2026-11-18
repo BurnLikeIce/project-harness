@@ -1,20 +1,36 @@
-# Adopting an existing or new project
+# Adoption and Binding Maintenance
 
-Read the team's instructions and any existing `HARNESS.md`. Determine which requirement, work item, build, test, or delivery guide the project actually uses. Inspection can suggest conventional filenames. Confirm their purpose before adding them. External trackers and custom document names are valid sources.
+## Inspect and Reuse
 
-Use the root `HARNESS.md` for supplementary local agreements and links. An empty project can start with this file alone. Add a task or decision record when there is a real item and no suitable place for it. For an existing project, keep its records and history in place. When others need the map, link it from an entry they already use or include its shared path in the handoff.
+For adoption, inspect project guidance, the existing map, and likely task and decision sources. Reuse each category independently, preserve custom paths, and create only missing records. Avoid a whole-project documentation audit unless it is needed.
 
-## Existing command entry points
+Selecting or naming the Skill alone does not authorize setup. A request to manage the project, or clearly approved project execution under Harness, permits the minimal binding. Keep exploration and review-only requests read-only.
 
-| Operation | PowerShell | POSIX shell |
+## Script Entry Points
+
+Use the matching PowerShell or POSIX entry points under `scripts/`:
+
+| Operation | PowerShell | POSIX |
 | --- | --- | --- |
-| Inspect | `inspect-project.ps1 -ProjectPath PATH` | `inspect-project.sh PATH` |
-| Adopt or add confirmed sources | `init-project.ps1 -ProjectPath PATH -Language zh-CN -Source 'work/items.md','docs/setup.md'` | `init-project.sh --project-path PATH --language zh-CN --source work/items.md --source docs/setup.md` |
-| Refresh | `update-project.ps1` with the same arguments | `update-project.sh` with the same arguments |
-| Check the map | `validate-project.ps1 -ProjectPath PATH` | `validate-project.sh PATH` |
+| Inspect | `inspect-project.ps1 -ProjectPath <path>` | `inspect-project.sh <path>` |
+| Adopt | `init-project.ps1 -ProjectPath <path> -Language en` | `init-project.sh --project-path <path> --language en` |
+| Refresh bindings | `update-project.ps1 -ProjectPath <path> -Language en` | `update-project.sh --project-path <path> --language en` |
+| Validate | `validate-project.ps1 -ProjectPath <path>` | `validate-project.sh <path>` |
 
-The writer creates a plain map, links existing root README and team instructions on first adoption, and appends only explicitly supplied local files. An existing map is checked in place. Edit the ordinary Markdown directly for a changed agreement, renamed link or external source. Use standard inline Markdown links for sources the scripts should check. For example, `[work items](<docs/work items.md>)`. Validation checks local paths. Verify external access with the recipient.
+Use `zh-CN` for Chinese templates and managed sections. These scripts support setup and maintenance, not an every-task ritual.
 
-Legacy map entries remain readable, including custom paths. An unmapped category can stay empty. If an old installation added a rule requiring its personal skill, the project owner can replace that block with a pointer to `HARNESS.md` when migrating. Scripts leave team instructions and project history intact.
+The initializer preserves valid custom mappings, reuses partial task or decision sources, creates missing ledgers, and validates the binding. The updater refreshes managed blocks and maps existing sources; it does not create missing ledgers. Validation must reject a missing or unmapped required source.
 
-Reloading the installed skill only refreshes the current instructions. Installation, adopting a project, editing project sources and publishing each follow the requested scope.
+Review the resulting diff and report what was established or remains unresolved. Existing `ADOPTED`, `ALREADY_ADOPTED`, and `BLOCKED` labels remain usable without requiring a fixed response form.
+
+## Sync and Updates
+
+"Sync the latest project-harness" only reloads locally installed rules. Do not run scripts, edit project files, change Git state, download updates, or reinstall the Skill.
+
+When the user requests binding updates, refresh only managed sections and preserve other content. Repeating the same update should produce no further diff.
+
+Updating the installed Skill does not require migrating projects or regenerating their documents. Existing layouts, mappings, and identifiers remain valid. Preserve project-specific requirements when older generic workflow text conflicts with current Skill guidance.
+
+## Structural Changes
+
+Reorganization is separate from adoption or a binding refresh. Establish affected paths and intended changes before moving or consolidating documents. Proceed within already approved scope; clarify unresolved changes rather than adding a second approval after a concrete plan is authorized.

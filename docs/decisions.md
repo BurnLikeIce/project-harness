@@ -4,13 +4,6 @@ Record product and technical choices whose rationale or consequences should guid
 
 ## Accepted
 
-### DEC-0004 - Use a project-owned map and verify the recipient's copy
-
-- Date: 2026-11-18
-- Keep `HARNESS.md` as the entry for adopted projects. Preserve team rules and source locations. Add records when there is content to maintain.
-- Compare handoff documents against the revision the recipient will actually receive. A structural check can pass while a deployment update exists only in one working copy.
-- This replaces DEC-0003's file-generation defaults and preserves its source-reuse, evidence and scope decisions. See TASK-0004.
-
 ### DEC-0003 - Focus instructions on accurate project continuity
 
 - Status: accepted

@@ -4,18 +4,9 @@ Record work that must survive a conversation, ownership, acceptance, integration
 
 ## Active
 
-## Completed
-
-### TASK-0004 - Portable project adoption and verifiable handoffs
-
-- Date: 2026-11-18
-- Outcome: Plain Markdown project maps, opt-in links, read-only handoff revision comparison, and bilingual usage and release guidance.
-- Verification: The native test suites check new and existing projects, unchanged team instructions, repeated adoption, legacy mappings, lost links, current versus older Git revisions and unpublished documents. Practical checks used existing project files read-only. One unmarked map passed with its real links, and a separate handoff identified two changed records in the working copy.
-- The public tests reproduce the handoff with synthetic records. See [PowerShell](../tests/run-tests.ps1), [POSIX](../tests/run-tests.sh), and DEC-0004.
-
 ### TASK-0003 - Simplify project continuity guidance
 
-- Status: merged
+- Status: ready_for_review
 - Created: 2026-09-05
 - Outcome: Apply the approved concise Skill instructions across references and public documentation while keeping project records accurate.
 - Scope: Skill instructions, supporting references, documentation, and removal of exact-phrase test assertions.
@@ -23,7 +14,9 @@ Record work that must survive a conversation, ownership, acceptance, integration
 - Linked decisions: `DEC-0003`
 - Evidence: approved instruction draft implemented; instruction consistency reviewed for read-only sync, small consequential changes, review-only requests, authorized repair, and workspace-aware handoffs. Skill validation, PowerShell tests, and POSIX tests under WSL pass. Local installation synchronized. No live task-creation or model-behavior evaluation was run.
 - Publication: the user authorized committing and publishing `refactor/project-continuity` as a PR.
-- Result: merged in [PR #3](https://github.com/BurnLikeIce/codex-project-harness/pull/3) on 2026-09-05.
+- Next action: review the branch's PR and CI results before deciding on merge. Merge and release remain pending.
+
+## Completed
 
 ### TASK-0002 — Adapt Project Harness to native Codex tasks
 

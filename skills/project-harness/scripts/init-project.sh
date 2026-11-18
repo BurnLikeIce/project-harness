@@ -1,80 +1,134 @@
 #!/usr/bin/env sh
 set -eu
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-project=.
-language=en
-sources=''
+
+project_path="."
+language="en"
+
 while [ "$#" -gt 0 ]; do
-  [ "$#" -ge 2 ] || { printf 'Missing value for %s\n' "$1" >&2; exit 2; }
   case "$1" in
-    --project-path) project=$2 ;;
-    --language) language=$2 ;;
-    --source)
-      case "$2" in ''|*'
-'*) printf 'Expected a single project-relative source path.\n' >&2; exit 2 ;; esac
-      sources="$sources$2
-" ;;
+    --project-path) project_path="$2"; shift 2 ;;
+    --language) language="$2"; shift 2 ;;
     *) printf 'Unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
-  shift 2
 done
+
 case "$language" in en|zh-CN) ;; *) printf 'Language must be en or zh-CN\n' >&2; exit 2 ;; esac
-cd -- "$project"
-if [ -f HARNESS.md ] && [ -z "$sources" ]; then
-  exec sh "$script_dir/validate-project.sh" .
-fi
 
-lock=.project-harness-write.lock
-mkdir "$lock"
-trap 'rm -f "$lock/HARNESS.md" "$lock/known" "$lock/links"; rmdir "$lock"' EXIT
-trap 'exit 1' HUP INT TERM
-if [ -e HARNESS.md ] || [ -L HARNESS.md ]; then
-  sh "$script_dir/validate-project.sh" .
-  LC_ALL=C awk -f "$script_dir/map-targets.awk" HARNESS.md > "$lock/known"
-  destination=HARNESS.md
-else
-  for entry in README.md AGENTS.md; do
-    if [ -f "$entry" ]; then sources="$entry
-$sources"; fi
+project_path=$(cd "$project_path" && pwd)
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+skill_root=$(dirname "$script_dir")
+template_root="$skill_root/assets/minimal-project/$language"
+
+copy_missing() {
+  relative="$1"
+  destination="$project_path/$relative"
+  if [ -e "$destination" ]; then
+    printf 'SKIP existing: %s\n' "$relative"
+    return
+  fi
+  mkdir -p "$(dirname "$destination")"
+  cp "$template_root/$relative" "$destination"
+  printf 'CREATE: %s\n' "$relative"
+}
+
+mapped_existing() {
+  pattern="$1"
+  [ -f "$project_path/HARNESS.md" ] || return 1
+  managed=$(awk '
+    /<!-- project-harness:managed:start -->/ { active = 1; next }
+    /<!-- project-harness:managed:end -->/ { active = 0 }
+    active { print }
+  ' "$project_path/HARNESS.md")
+  line=$(printf '%s\n' "$managed" | grep -E "$pattern" | head -n 1 || true)
+  [ -n "$line" ] || return 1
+  value=$(printf '%s\n' "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*[^:：]+[:：][[:space:]]*//; s/^`//; s/`$//')
+  [ "$value" != "(not mapped)" ] || return 1
+  case "$value" in
+    /*) mapped_path="$value" ;;
+    *) mapped_path="$project_path/$value" ;;
+  esac
+  [ -f "$mapped_path" ] || return 1
+  printf '%s' "$value"
+}
+
+first_existing() {
+  pattern="$1"
+  shift
+  if mapped=$(mapped_existing "$pattern"); then
+    printf '%s' "$mapped"
+    return
+  fi
+  for candidate in "$@"; do
+    if [ -f "$project_path/$candidate" ]; then
+      printf '%s' "$candidate"
+      return
+    fi
   done
-  : > "$lock/known"
-  destination="$lock/HARNESS.md"
-  cp "$script_dir/../assets/minimal-project/$language/HARNESS.md" "$destination"
+  return 1
+}
+
+replace_managed_block() {
+  path="$1"
+  heading="$2"
+  block_file="$3"
+  start='<!-- project-harness:entry:start -->'
+  end='<!-- project-harness:entry:end -->'
+  [ -f "$path" ] || printf '%s\n' "$heading" > "$path"
+  output="$path.project-harness.tmp"
+
+  if grep -Fq "$start" "$path"; then
+    awk -v start="$start" -v end="$end" -v block_file="$block_file" '
+      BEGIN { while ((getline line < block_file) > 0) block = block line ORS; close(block_file) }
+      index($0, start) { printf "%s", block; managed = 1; next }
+      managed && index($0, end) { managed = 0; next }
+      !managed { print }
+    ' "$path" > "$output"
+  else
+    cp "$path" "$output"
+    printf '\n' >> "$output"
+    cat "$block_file" >> "$output"
+  fi
+
+  if cmp -s "$path" "$output"; then
+    rm -f "$output"
+    printf 'UNCHANGED: AGENTS.md\n'
+  else
+    mv "$output" "$path"
+    printf 'UPDATE: AGENTS.md\n'
+  fi
+}
+
+copy_missing HARNESS.md
+if task_source=$(first_existing '^[[:space:]]*-[[:space:]]*(Tasks|任务记录)[：:]' docs/tasks.md TASKS.md docs/task.md); then
+  printf 'REUSE existing task source: %s\n' "$task_source"
+else
+  copy_missing docs/tasks.md
+fi
+if decision_source=$(first_existing '^[[:space:]]*-[[:space:]]*(Decisions|决策记录)[：:]' docs/decisions.md DECISIONS.md docs/decision-log.md); then
+  printf 'REUSE existing decision source: %s\n' "$decision_source"
+else
+  copy_missing docs/decisions.md
 fi
 
-: > "$lock/links"
-while IFS= read -r source; do
-  [ -n "$source" ] || continue
-  source=$(printf '%s' "$source" | tr '\\' '/')
-  while [ "${source#./}" != "$source" ]; do source=${source#./}; done
-  case "$source" in /*|[A-Za-z]*:*|..|../*|*/../*|*/..) printf 'Expected a project-relative source: %s\n' "$source" >&2; exit 1 ;; esac
-  [ -f "./$source" ] || { printf 'Missing source: %s\n' "$source" >&2; exit 1; }
-  if ! grep -Fqx -e "$source" "$lock/known"; then
-    printf '%s\n' "$source" >> "$lock/known"
-    label=$(printf '%s' "$source" | sed 's/[][]/\\&/g')
-    url=$(printf '%s' "$source" | sed 's/%/%25/g;s/#/%23/g;s/</%3C/g;s/>/%3E/g')
-    printf '%s\n' "- [$label](<$url>)" >> "$lock/links"
-  fi
-done <<EOF
-$sources
+block_file="$project_path/.project-harness-entry.tmp"
+if [ "$language" = "zh-CN" ]; then
+  heading='# 智能体说明'
+  cat > "$block_file" <<'EOF'
+<!-- project-harness:entry:start -->
+项目工作可能影响需求、任务、决策、缺陷、验收、进度、协调、交接或发布边界时，自动使用当前安装的 Project Harness 规则，并在修改长期状态前阅读 `HARNESS.md`。根据日常表达判断项目意图，不要求用户说出 Skill 名称或理解主控等内部术语。保留已映射的事实来源；在用户明确开始、继续或批准执行之前，探索性讨论保持只读。
+<!-- project-harness:entry:end -->
 EOF
+else
+  heading='# Agent Instructions'
+  cat > "$block_file" <<'EOF'
+<!-- project-harness:entry:start -->
+For project work that may affect requirements, tasks, decisions, defects, acceptance, progress, coordination, handoff, or release boundaries, use the currently installed Project Harness rules and read `HARNESS.md` before changing durable state. Infer project intent from ordinary language; do not require the user to name the skill or understand control-context terminology. Preserve mapped sources of truth, and keep exploratory discussion read-only until the user clearly starts, resumes, or approves execution.
+<!-- project-harness:entry:end -->
+EOF
+fi
 
-if [ -s "$lock/links" ]; then
-  [ ! -L "$destination" ] || { printf 'Edit the shared link target explicitly before adding sources.\n' >&2; exit 1; }
-  if ! LC_ALL=C tr -d '\000' < "$destination" | cmp -s - "$destination"; then
-    printf 'Edit this map in its existing text encoding.\n' >&2; exit 1
-  fi
-  cr=$(printf '\r')
-  ending=''
-  if ! LC_ALL=C tr -d '\r' < "$destination" | cmp -s - "$destination"; then ending=$cr; fi
-  {
-    if [ -n "$(tail -c 1 "$destination")" ]; then printf '%s\n' "$ending"; fi
-    printf '%s\n' "$ending"
-    while IFS= read -r line; do printf '%s%s\n' "$line" "$ending"; done < "$lock/links"
-  } >> "$destination"
-fi
-if [ "$destination" != HARNESS.md ]; then
-  # Prefer atomic creation. A noclobber copy also works on volumes without hard links.
-  ln "$destination" HARNESS.md 2>/dev/null || (set -C; cat "$destination" > HARNESS.md)
-fi
-sh "$script_dir/validate-project.sh" .
+replace_managed_block "$project_path/AGENTS.md" "$heading" "$block_file"
+rm -f "$block_file"
+sh "$script_dir/update-project.sh" --project-path "$project_path" --language "$language"
+sh "$script_dir/validate-project.sh" "$project_path"
+printf 'Project Harness 2 initialized or adopted at: %s\n' "$project_path"

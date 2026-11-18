@@ -1,10 +1,23 @@
 # Project Harness
 
-- [Current design](docs/harness-v2-design.md)
-- [Tasks and verification](docs/tasks.md)
-- [Decisions](docs/decisions.md)
-- [English guide](README.md) and [Chinese guide](README.zh-CN.md)
-- [Contribution and pull-request rules](CONTRIBUTING.md)
-- [PowerShell tests](tests/run-tests.ps1) and [POSIX tests](tests/run-tests.sh)
+<!-- project-harness:managed:start -->
+## Harness Protocol
 
-The repository owner reviews and decides whether to merge pull requests. Pushing branches, opening or merging pull requests, tagging versions and publishing releases require explicit authorization.
+- Protocol: 2
+- Tasks: `docs/tasks.md`
+- Decisions: `docs/decisions.md`
+- Working rule: preserve project-specific facts and use the latest installed Project Harness protocol.
+<!-- project-harness:managed:end -->
+
+## Project Map
+
+- Current design contract: `docs/harness-v2-design.md`
+- Public overview: `README.md` and `README.zh-CN.md`
+- Contribution and pull-request rules: `CONTRIBUTING.md`
+- Automated tests: `tests/run-tests.ps1` and `tests/run-tests.sh`
+
+## Authority Boundaries
+
+- The repository owner reviews and decides whether to merge pull requests.
+- Do not push branches, create or merge pull requests, tag versions, or publish releases without explicit authorization.
+- Active development, review, integration, and release state are recorded in `docs/tasks.md` and `docs/decisions.md`.

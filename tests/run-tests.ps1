@@ -1,112 +1,143 @@
-﻿$ErrorActionPreference = 'Stop'
-$skill = (Resolve-Path (Join-Path $PSScriptRoot '../skills/project-harness')).Path
-$init = Join-Path $skill 'scripts/init-project.ps1'
-$update = Join-Path $skill 'scripts/update-project.ps1'
-$validate = Join-Path $skill 'scripts/validate-project.ps1'
-$inspect = Join-Path $skill 'scripts/inspect-project.ps1'
-$parent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$temp = Join-Path $parent ('project-harness-test-' + [guid]::NewGuid().ToString('N'))
-$utf8 = [Text.UTF8Encoding]::new($false)
-[IO.Directory]::CreateDirectory($temp) | Out-Null
+$ErrorActionPreference = "Stop"
 
-function Check($condition, [string]$message) { if (-not $condition) { throw $message } }
-function Put([string]$path, [string]$body) { [IO.File]::WriteAllText($path, $body, $utf8) }
-function Digest([string]$path) { (Get-FileHash -LiteralPath $path).Hash }
-function Must-Fail([scriptblock]$action, [string]$message) {
-    try { & $action | Out-Null } catch { return }
-    throw $message
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$skill = Join-Path $repo 'skills\project-harness'
+$temp = Join-Path $PSScriptRoot '.tmp-tests-ps'
+
+function Remove-SafeTemp {
+    if (-not (Test-Path -LiteralPath $temp)) { return }
+    $resolved = (Resolve-Path -LiteralPath $temp).Path
+    if (-not $resolved.StartsWith($repo + [IO.Path]::DirectorySeparatorChar)) {
+        throw "Unsafe test directory: $resolved"
+    }
+    Remove-Item -LiteralPath $resolved -Recurse -Force
 }
-function Git-Test([string[]]$arguments) {
-    & git -C $temp @arguments
-    if ($LASTEXITCODE -ne 0) { throw "Fixture Git operation failed: $arguments" }
+
+function Write-Utf8 {
+    param([string]$Path, [string]$Text)
+    [IO.File]::WriteAllText($Path, $Text, [Text.UTF8Encoding]::new($false))
+}
+
+function Get-TreeFingerprint {
+    param([string]$Path)
+    return (Get-ChildItem -Recurse -File $Path | Sort-Object FullName | ForEach-Object {
+        "$($_.FullName.Substring($Path.Length))=$((Get-FileHash $_.FullName -Algorithm SHA256).Hash)"
+    }) -join "`n"
 }
 
 try {
-    foreach ($language in 'en','zh-CN') {
-        $dir = (New-Item -ItemType Directory -Path (Join-Path $temp $language)).FullName
-        & $init -ProjectPath $dir -Language $language | Out-Null
-        Check (@(Get-ChildItem -LiteralPath $dir -Force).Count -eq 1) 'Empty project must contain only its map'
-        $map = Join-Path $dir 'HARNESS.md'
-        Check ((Digest $map) -eq (Digest "$skill/assets/minimal-project/$language/HARNESS.md")) 'Wrong localized map'
-        & $init -ProjectPath $dir -Language $language | Out-Null
-    }
+    Remove-SafeTemp
+    New-Item -ItemType Directory -Path "$temp\new-en", "$temp\new-zh", "$temp\v1\docs", "$temp\v1\prompts", "$temp\partial\docs", "$temp\custom\project", "$temp\invalid" -Force | Out-Null
 
-    $project = (New-Item -ItemType Directory -Path "$temp/sample").FullName
-    New-Item -ItemType Directory -Path "$project/docs" | Out-Null
-    Put "$project/AGENTS.md" "Existing team instructions`r`n"
-    Put "$project/README.md" 'Project guide'
-    Put "$project/docs/work items.md" 'Package ready, deployment pending.'
-    $team = Digest "$project/AGENTS.md"
-    & $init -ProjectPath $project -Source 'docs/work items.md' | Out-Null
-    Check ((Digest "$project/AGENTS.md") -eq $team) 'Team instructions changed'
-    Check (-not (Test-Path "$project/docs/decisions.md")) 'Empty ledger created'
-    $map = Join-Path $project 'HARNESS.md'
-    $first = Digest $map
-    & $update -ProjectPath $project -Source 'docs/work items.md' | Out-Null
-    Check ((Digest $map) -eq $first) 'Repeated adoption changed the map'
+    Write-Utf8 "$temp\v1\HARNESS.md" "# Existing Harness`n`nCustom project fact: KEEP-ME"
+    Write-Utf8 "$temp\v1\AGENTS.md" "# Existing Instructions`n`nCustom rule: KEEP-AGENT"
+    Write-Utf8 "$temp\v1\docs\tasks.md" "# Old tasks`n`nTASK-CONTENT"
+    Write-Utf8 "$temp\v1\docs\decisions.md" "# Old decisions`n`nDECISION-CONTENT"
+    Write-Utf8 "$temp\v1\docs\product.md" "# Product`n`nPRODUCT-CONTENT"
+    Write-Utf8 "$temp\v1\docs\sop.md" "# Legacy SOP`n`nSOP-CONTENT"
+    Write-Utf8 "$temp\v1\prompts\master.md" "# Legacy prompt`n`nPROMPT-CONTENT"
+    Write-Utf8 "$temp\partial\TASKS.md" "# Existing tasks`n`nPARTIAL-TASK-CONTENT"
+    Write-Utf8 "$temp\partial\docs\product.md" "# Existing product`n`nPARTIAL-PRODUCT-CONTENT"
+    Write-Utf8 "$temp\custom\project\work-items.md" "# Custom tasks`n`nCUSTOM-TASK-CONTENT"
+    Write-Utf8 "$temp\custom\project\choices.md" "# Custom decisions`n`nCUSTOM-DECISION-CONTENT"
+    Write-Utf8 "$temp\custom\HARNESS.md" @"
+# Existing Harness
 
-    $custom = "# Map`r`n`r`nTeam agreements.`r`n- [tasks](docs/work%20items.md#today)`r`n- [tracker](https://example.org/items)`r`n"
-    $custom += 'Example `[ignore](missing.txt)`.' + "`r`n" + '```md' + "`r`n[ignore](missing.md)`r`n" + '```'
-    Put $map $custom
-    Put "$project/docs/验收 [1] (draft)#.md" 'Acceptance'
-    & $update -ProjectPath $project -Source 'docs/验收 [1] (draft)#.md','docs/work items.md' | Out-Null
-    $changed = [IO.File]::ReadAllText($map)
-    Check ($changed.StartsWith($custom)) 'Existing custom text changed'
-    Check ($changed -notmatch '(?<!\r)\n') 'CRLF map acquired LF lines'
-    $first = Digest $map
-    & $update -ProjectPath $project -Source 'docs/验收 [1] (draft)#.md' | Out-Null
-    Check ((Digest $map) -eq $first) 'Repeated explicit link duplicated'
-    Must-Fail { & $update -ProjectPath $project -Source 'README.md','missing.md' } 'Missing input accepted'
-    Check ((Digest $map) -eq $first) 'Failed update wrote a partial change'
-
-    $legacy = (New-Item -ItemType Directory -Path "$temp/legacy").FullName
-    Put "$legacy/TASKS.md" 'Conventional alternative'
-    Put "$legacy/custom.md" 'Actual source'
-    Put "$legacy/HARNESS.md" @'
-# Existing map
 <!-- project-harness:managed:start -->
-- Tasks: `custom.md`
-- Decisions: (not mapped)
+## Harness Protocol
+
+- Protocol: 2
+- Tasks: ``project/work-items.md``
+- Decisions: ``project/choices.md``
 <!-- project-harness:managed:end -->
-'@
-    $before = Digest "$legacy/HARNESS.md"
-    & $init -ProjectPath $legacy | Out-Null
-    Check ((Digest "$legacy/HARNESS.md") -eq $before) 'Legacy content changed'
-    Remove-Item -LiteralPath "$legacy/custom.md"
-    Must-Fail { & $validate -ProjectPath $legacy } 'Broken legacy link accepted'
-    $state = & $inspect -ProjectPath $legacy | ConvertFrom-Json
-    Check ($state.sources.tasks -eq 'custom.md') 'Broken mapping silently redirected'
+"@
 
-    Git-Test @('init','-q')
-    Git-Test @('add','--','sample')
-    Git-Test @('-c','user.name=Harness tests','-c','user.email=tests@example.invalid','commit','-qm','Shared handoff')
-    $shared = (Git-Test @('rev-parse','HEAD')).Trim()
-    Put "$project/docs/work items.md" 'Deployment verified, business check pending.'
-    Put "$project/docs/local only.md" 'Local receipt'
-    & $update -ProjectPath $project -Source 'docs/local only.md' | Out-Null
-    $state = (& $inspect -ProjectPath $project -HandoffRevision $shared | ConvertFrom-Json).handoff
-    $records = @{}
-    foreach ($item in $state.records) { $records[$item.path] = $item.state }
-    Check ($state.commit -eq $shared) 'Wrong compared revision'
-    Check ($records['docs/work items.md'] -eq 'differs-from-revision') 'Missed changed deployment fact'
-    Check ($records['docs/local only.md'] -eq 'absent-from-revision') 'Missed local-only receipt'
-    Check ($records['docs/验收 [1] (draft)#.md'] -eq 'matches-revision') 'URL or nested repository path misread'
-    Check ($records['https://example.org/items'] -eq 'verify-separately') 'External access inferred'
-    Must-Fail { & $inspect -ProjectPath $project -HandoffRevision 'nonexistent-revision' } 'Invalid ref accepted'
-    Git-Test @('add','--','sample')
-    Git-Test @('-c','user.name=Harness tests','-c','user.email=tests@example.invalid','commit','-qm','Verified deployment')
-    $now = (& $inspect -ProjectPath $project -HandoffRevision HEAD | ConvertFrom-Json).handoff
-    Check (($now.records | Where-Object path -eq 'docs/work items.md').state -eq 'matches-revision') 'Current commit missed'
-    $old = (& $inspect -ProjectPath $project -HandoffRevision $shared | ConvertFrom-Json).handoff
-    Check (($old.records | Where-Object path -eq 'docs/work items.md').state -eq 'differs-from-revision') 'Recipient ref ignored'
+    & "$skill\scripts\init-project.ps1" -ProjectPath "$temp\new-en" -Language en | Out-Host
+    & "$skill\scripts\init-project.ps1" -ProjectPath "$temp\new-zh" -Language zh-CN | Out-Host
 
-    Put $map "# Map`n- [missing](broken.md)"
-    Must-Fail { & $validate -ProjectPath $project } 'Missing plain Markdown link accepted'
-    Write-Output 'PASS: PowerShell adoption, file preservation, link checks and handoff revisions'
-} finally {
-    $actual = (Resolve-Path -LiteralPath $temp).Path
-    if ($actual -ne $temp -or [IO.Path]::GetDirectoryName($actual).TrimEnd('\','/') -ne $parent.TrimEnd('\','/')) {
-        throw "Unexpected fixture cleanup path: $actual"
+    foreach ($name in @('new-en', 'new-zh')) {
+        $files = @(Get-ChildItem -Recurse -File "$temp\$name")
+        if ($files.Count -ne 4) { throw "$name should contain exactly four initialized files, found $($files.Count)" }
+        & "$skill\scripts\validate-project.ps1" -ProjectPath "$temp\$name" | Out-Host
+        $language = if ($name -eq 'new-zh') { 'zh-CN' } else { 'en' }
+        foreach ($ledger in @('tasks', 'decisions')) {
+            $actual = (Get-FileHash -LiteralPath "$temp\$name\docs\$ledger.md").Hash
+            $expected = (Get-FileHash -LiteralPath "$skill\assets\minimal-project\$language\docs\$ledger.md").Hash
+            if ($actual -ne $expected) { throw "$name did not copy the $ledger template for $language" }
+        }
     }
-    Remove-Item -LiteralPath $actual -Recurse -Force
+
+    & "$skill\scripts\init-project.ps1" -ProjectPath "$temp\partial" -Language en | Out-Host
+    if (Test-Path -LiteralPath "$temp\partial\docs\tasks.md") {
+        throw 'Partial adoption duplicated the existing TASKS.md source'
+    }
+    if (-not (Test-Path -LiteralPath "$temp\partial\docs\decisions.md") -or
+        -not (Test-Path -LiteralPath "$temp\partial\HARNESS.md") -or
+        -not (Test-Path -LiteralPath "$temp\partial\AGENTS.md")) {
+        throw 'Partial adoption did not create the missing governance files'
+    }
+    $partialInspection = & "$skill\scripts\inspect-project.ps1" -ProjectPath "$temp\partial" | ConvertFrom-Json
+    if ($partialInspection.sources.tasks -ne 'TASKS.md') { throw 'Partial task source was not reused' }
+    if ($partialInspection.sources.decisions -ne 'docs/decisions.md') { throw 'Missing decision source was not created and mapped' }
+    if (-not (Select-String -LiteralPath "$temp\partial\TASKS.md" -Pattern 'PARTIAL-TASK-CONTENT' -Quiet)) {
+        throw 'Partial task content was not preserved'
+    }
+    $partialFirst = Get-TreeFingerprint "$temp\partial"
+    & "$skill\scripts\init-project.ps1" -ProjectPath "$temp\partial" -Language en | Out-Host
+    $partialSecond = Get-TreeFingerprint "$temp\partial"
+    if ($partialFirst -cne $partialSecond) { throw 'Partial adoption is not idempotent' }
+
+    & "$skill\scripts\init-project.ps1" -ProjectPath "$temp\custom" -Language en | Out-Host
+    if ((Test-Path -LiteralPath "$temp\custom\docs\tasks.md") -or
+        (Test-Path -LiteralPath "$temp\custom\docs\decisions.md")) {
+        throw 'Custom mapped sources were duplicated by default ledgers'
+    }
+    $customInspection = & "$skill\scripts\inspect-project.ps1" -ProjectPath "$temp\custom" | ConvertFrom-Json
+    if ($customInspection.sources.tasks -ne 'project/work-items.md') { throw 'Custom task mapping was not preserved' }
+    if ($customInspection.sources.decisions -ne 'project/choices.md') { throw 'Custom decision mapping was not preserved' }
+    foreach ($check in @(
+        @("$temp\custom\project\work-items.md", 'CUSTOM-TASK-CONTENT'),
+        @("$temp\custom\project\choices.md", 'CUSTOM-DECISION-CONTENT')
+    )) {
+        if (-not [IO.File]::ReadAllText($check[0]).Contains($check[1])) {
+            throw "Custom mapped content was not preserved in $($check[0]): $($check[1])"
+        }
+    }
+    $customFirst = Get-TreeFingerprint "$temp\custom"
+    & "$skill\scripts\init-project.ps1" -ProjectPath "$temp\custom" -Language en | Out-Host
+    $customSecond = Get-TreeFingerprint "$temp\custom"
+    if ($customFirst -cne $customSecond) { throw 'Custom mapped adoption is not idempotent' }
+
+    & "$skill\scripts\update-project.ps1" -ProjectPath "$temp\invalid" -Language en | Out-Host
+    $pwsh = (Get-Process -Id $PID).Path
+    & $pwsh -NoLogo -NoProfile -File "$skill\scripts\validate-project.ps1" -ProjectPath "$temp\invalid" *> $null
+    if ($LASTEXITCODE -eq 0) { throw 'Validation accepted unresolved task and decision mappings' }
+
+    & "$skill\scripts\update-project.ps1" -ProjectPath "$temp\v1" -Language en | Out-Host
+    $first = Get-TreeFingerprint "$temp\v1"
+    & "$skill\scripts\update-project.ps1" -ProjectPath "$temp\v1" -Language en | Out-Host
+    $second = Get-TreeFingerprint "$temp\v1"
+    if ($first -cne $second) { throw 'V1 update is not idempotent' }
+
+    & "$skill\scripts\validate-project.ps1" -ProjectPath "$temp\v1" | Out-Host
+    $inspection = & "$skill\scripts\inspect-project.ps1" -ProjectPath "$temp\v1" | ConvertFrom-Json
+    if ($inspection.protocol -ne '2') { throw "Unexpected protocol: $($inspection.protocol)" }
+    if ($inspection.sources.tasks -ne 'docs/tasks.md') { throw 'Task source map failed' }
+
+    foreach ($check in @(
+        @("$temp\v1\HARNESS.md", 'KEEP-ME'),
+        @("$temp\v1\AGENTS.md", 'KEEP-AGENT'),
+        @("$temp\v1\docs\tasks.md", 'TASK-CONTENT'),
+        @("$temp\v1\docs\decisions.md", 'DECISION-CONTENT'),
+        @("$temp\v1\docs\sop.md", 'SOP-CONTENT'),
+        @("$temp\v1\prompts\master.md", 'PROMPT-CONTENT')
+    )) {
+        if (-not (Select-String -LiteralPath $check[0] -Pattern $check[1] -Quiet)) {
+            throw "Existing content was not preserved: $($check[0])"
+        }
+    }
+
+    Write-Output 'PASS: Project Harness PowerShell tests'
+} finally {
+    Remove-SafeTemp
 }
