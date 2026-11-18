@@ -1,19 +1,11 @@
-# Git, Integration, and Release
+# Versions, deployment and rollback
 
-Read the relevant project constraints and actual Git state before repository operations. Preserve user changes and use isolation when the work or native environment requires it.
+Use the existing repository, version convention, build script and deployment entry point. Keep related code changes together and preserve others' work. For a delivery, show the existing identifier with a date and a short change description meaningful to the user.
 
-## Authorization
+In the project's existing release or task record, connect the exact source revision to the actual package (digest, immutable build ID or equivalent). Record the target environment, last verified time, version observed there and relevant health or business checks. Link to that record from other documents. A package can be ready while the deployment or user acceptance is still pending.
 
-Interpret the user's request and prior authorization together. Carry out necessary steps within the authorized outcome without asking for each routine substep. Respect any explicit limitation, such as local-only work or a protected release.
+Test the package that will run in production when the platforms match. Keep runtime paths and configuration meanings aligned between environments. Store credentials, site configuration and live data separately from replaceable application files. For distinct platforms, identify and test the corresponding artifact.
 
-Adoption, a successful test, or acceptance alone does not authorize publishing or deploying. Unrelated releases, destructive cleanup, and material scope expansion require their own authority.
+For a rollback, identify the requested environment and target using the user's description. Check the actual program and data compatibility, especially data written after the upgrade. Report what the old version can display and process, the tested recovery path, and any known loss of access or data. A retained backup or equal schema number alone cannot establish compatibility. Use an isolated copy to test a quick switch before describing it as supported.
 
-## Integration
-
-Before integration, verify the intended base, changed scope, relevant evidence, and any conflicts. For concurrent work, establish write ownership and integration order. Choose checks proportional to the change and project requirements.
-
-After merge, record the confirmed result and remaining work. Keep local validation, acceptance, integration, and deployment status distinct.
-
-## Cleanup
-
-Remove branches and worktrees only when cleanup is authorized and their changes are integrated or explicitly abandoned. Check ownership and uncommitted work first. A task finishing does not by itself authorize deleting its workspace.
+Run real deployment, program rollback, or restoration of a database backup within the scope authorized for that operation. Keep the result and any remaining business checks in the existing delivery record.

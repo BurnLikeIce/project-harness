@@ -1,7 +1,16 @@
 #!/usr/bin/env sh
 set -eu
 
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_path="${1:-.}"
+[ "$#" -eq 0 ] || shift
+revision=''
+if [ "$#" -gt 0 ]; then
+  [ "$#" -eq 2 ] && [ "$1" = --handoff-revision ] && [ -n "$2" ] || {
+    printf 'Usage: inspect-project.sh PROJECT [--handoff-revision REF]\n' >&2; exit 2;
+  }
+  revision=$2
+fi
 project_path=$(cd "$project_path" && pwd)
 
 mapped_existing() {
@@ -16,11 +25,6 @@ mapped_existing() {
   [ -n "$line" ] || return 1
   value=$(printf '%s\n' "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*[^:：]+[:：][[:space:]]*//; s/^`//; s/`$//')
   [ "$value" != "(not mapped)" ] || return 1
-  case "$value" in
-    /*) mapped_path="$value" ;;
-    *) mapped_path="$project_path/$value" ;;
-  esac
-  [ -f "$mapped_path" ] || return 1
   printf '%s' "$value"
 }
 
@@ -62,7 +66,7 @@ git_remote=""
 if command -v git >/dev/null 2>&1 && git -C "$project_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git_repository="true"
   git_branch=$(git -C "$project_path" branch --show-current 2>/dev/null || true)
-  git_dirty=$(git -C "$project_path" status --porcelain 2>/dev/null || true)
+  git_dirty=$(git --no-optional-locks -C "$project_path" status --porcelain 2>/dev/null || true)
   git_remote=$(git -C "$project_path" remote get-url origin 2>/dev/null || true)
 fi
 
@@ -81,3 +85,32 @@ git_branch=$git_branch
 git_dirty=$([ -n "$git_dirty" ] && printf true || printf false)
 git_remote=$git_remote
 EOF
+if [ -n "$revision" ]; then
+  cd -- "$project_path"
+  [ "$git_repository" = true ] && [ -f HARNESS.md ] || {
+    printf 'Choose a Git checkout containing HARNESS.md.\n' >&2; exit 1;
+  }
+  commit=$(git rev-parse --verify --end-of-options "$revision^{commit}") || exit 1
+  prefix=$(git rev-parse --show-prefix)
+  printf 'handoff_revision=%s\nhandoff_commit=%s\n' "$revision" "$commit"
+  targets=$(LC_ALL=C awk -f "$script_dir/map-targets.awk" HARNESS.md)
+  while IFS= read -r target; do
+    [ -n "$target" ] || continue
+    relative=$target
+    while [ "${relative#./}" != "$relative" ]; do relative=${relative#./}; done
+    case "$relative" in
+      /*|\\*|[A-Za-z]*:*|..|../*|*/../*|*/..) state=verify-separately ;;
+      *)
+        if [ ! -e "./$relative" ]; then state=missing-locally
+        elif [ ! -f "./$relative" ] || [ -L "./$relative" ]; then state=verify-separately
+        elif recorded=$(git rev-parse --verify "$commit:$prefix$relative" 2>/dev/null); then
+          working=$(git hash-object -- "$relative")
+          if [ "$working" = "$recorded" ]; then state=matches-revision; else state=differs-from-revision; fi
+        else state=absent-from-revision; fi ;;
+    esac
+    printf 'handoff_record=%s\t%s\n' "$state" "$target"
+  done <<EOF
+HARNESS.md
+$targets
+EOF
+fi

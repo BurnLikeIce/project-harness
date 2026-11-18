@@ -1,118 +1,30 @@
-# Codex Project Harness
+# Project Harness
 
-Project Harness helps Codex keep project facts, decisions, progress, and verification evidence accurate across long-running work and task changes. It works in English and Chinese.
+Project Harness is an Agent Skill for adopting a project, reconciling conflicting records, handing work to someone else, and tracing a release or rollback. It works with English and Chinese projects. [中文说明](README.zh-CN.md)
 
-The agent maintains the records and chooses how to implement the work. Users can discuss requirements, report problems, and continue a project in ordinary language.
+## Use it
 
-[中文说明](README.zh-CN.md)
-
-## What It Keeps
-
-- A small project map linking to existing requirements and technical documents.
-- Important decisions, unfinished work, blockers, and the next action.
-- Evidence separating implementation, verification, acceptance, merge, and release.
-- Enough context to continue in another task.
-
-Small changes with lasting product or technical impact are recorded. Existing tasks and documents are updated first; the same facts are not copied into several ledgers. On resumption and completion, the agent reconciles recorded progress with observed results.
-
-Execution methods, plans, tests, and internal workers are chosen as needed. No fixed execution tiers, specialist roles, or auxiliary skills are required.
-
-## Project Footprint
-
-The default governance footprint is intentionally small:
-
-```text
-AGENTS.md
-HARNESS.md
-docs/
-  tasks.md
-  decisions.md
-```
-
-Product, architecture, API, security, deployment, testing, release, and handoff documents are created only when the project needs them. Project Harness inspects the repository and reuses equivalent files instead of creating duplicate sources of truth.
-
-## Install
-
-### Download Without a Terminal
-
-1. Download the Project Harness Skill ZIP from the [latest release](https://github.com/BurnLikeIce/codex-project-harness/releases/latest).
-2. Unzip it.
-3. Copy the `project-harness` folder into your Codex skills directory.
-4. Restart Codex.
-
-The final path must be:
-
-```text
-~/.codex/skills/project-harness/SKILL.md
-```
-
-On macOS, open Finder, press `Command + Shift + G`, and enter `~/.codex/skills`.
-
-On Windows, the usual destination is `%USERPROFILE%\.codex\skills\project-harness`.
-
-### Install With Git
-
-Clone the repository, then copy or link `skills/project-harness` into `~/.codex/skills/project-harness`. Restart Codex after installation or replacement.
-
-## Everyday Use
-
-To explicitly adopt Harness, ask:
-
-```text
-Use project-harness to manage this project.
-```
-
-The agent reuses existing documents and creates only missing records and a project entry. It maintains task and decision identifiers, progress, and history for you.
-
-There is no required phrase. Ordinary project requests can activate the Skill, and a project entry helps subsequent tasks discover it. Discussion and review-only requests stay within that scope; once execution is requested, the agent carries out authorized work and updates the relevant records.
-
-| Request | Expected behavior |
+| Request | What you get |
 | --- | --- |
-| "Can this feature be built?" | Discuss the options before implementation is requested. |
-| "Go ahead with this." | Implement the agreed change and record meaningful outcomes. |
-| "This page is wrong. Fix it." | Investigate and repair within scope; retain any important decision. |
-| "Review the result." | Explain findings, evidence, and next steps; respect review-only scope. |
-| "Sync the latest project-harness." | Reread locally installed rules without editing files or downloading an update. |
-| "Continue this project in a new task." | Refresh state and pass concise context through native capabilities, or provide a restart instruction. |
+| “Set this project up with my collaboration conventions.” | A root `HARNESS.md` with project-specific agreements and links to the records already in use. |
+| “Continue the download fix.” | Follow the existing project map and current task. Setup runs once. |
+| “Hand this over to someone using Friday's commit.” | Check whether the receiver's copy contains the current records and explain any gap. |
+| “Can we go back to the version before deduplication and keep today's work?” | Locate the release and deployment evidence, then explain what the earlier program can read and process. |
 
-New tasks are independent by default; forks inherit context when requested. The old task remains available, with no automatic archiving or ongoing monitoring. Workspace selection follows the user's request and native tool rules; Harness does not create a worktree for every role.
+Anyone with the shared project can follow `HARNESS.md` without installing this skill. When sharing the project, link the map from the README or give its path to the next maintainer. Keep changing requirements, progress and deployment results in their existing records.
 
-## Bundled Scripts
+## Install the current source
 
-Windows PowerShell:
+Download the [main branch ZIP](https://github.com/BurnLikeIce/codex-project-harness/archive/refs/heads/master.zip) or clone this repository. Copy the single `skills/project-harness` directory into your application's personal skills directory. Local Codex and Cursor support `~/.agents/skills/project-harness/SKILL.md`. If you already use a configured installation path, replace that copy and enable it when you are ready. Open a fresh session and request `project-harness` explicitly to try it. For a named older version use [GitHub Releases](https://github.com/BurnLikeIce/codex-project-harness/releases).
 
-```powershell
-skills/project-harness/scripts/inspect-project.ps1 -ProjectPath <path>
-skills/project-harness/scripts/init-project.ps1 -ProjectPath <path> -Language en
-skills/project-harness/scripts/validate-project.ps1 -ProjectPath <path>
-```
+## Existing projects and release records
 
-macOS/Linux:
+Adoption preserves team `AGENTS.md` files, custom maps, working files and earlier Protocol 2 source mappings. Existing task trackers and decision records stay in place. During adoption, choose the sources to add and fill in important project-specific agreements in plain Markdown.
 
-```bash
-skills/project-harness/scripts/inspect-project.sh <path>
-skills/project-harness/scripts/init-project.sh --project-path <path> --language en
-skills/project-harness/scripts/validate-project.sh <path>
-```
+The bundled PowerShell and POSIX commands support [setup and link checking](skills/project-harness/references/update-existing-project.md) and [read-only comparison with a handoff revision](skills/project-harness/references/coordination.md). Use the project's own tools for builds, deployment and rollback. See [version and recovery guidance](skills/project-harness/references/git-release.md).
 
-Use `zh-CN` for Chinese project templates and managed sections. The agent uses these scripts for setup or binding maintenance, not on every task.
+## Development
 
-## Development and Validation
+Run `tests/run-tests.ps1` and `sh tests/run-tests.sh`. These suites exercise project files and Git revision comparisons. Agent discovery and live deployment are separate checks.
 
-```powershell
-tests/run-tests.ps1
-```
-
-```bash
-sh tests/run-tests.sh
-```
-
-These are maintainer tests for the file-changing scripts: English and Chinese initialization, content preservation, source mapping, idempotent updates, and structure validation. Normal Skill use does not run this suite. Instruction changes need a consistency review and a small practical check where useful, not exact-phrase assertions.
-
-## Project Status
-
-This is a community project and is not an official OpenAI project.
-
-## License
-
-[MIT](LICENSE)
+Community project. [MIT license](LICENSE).

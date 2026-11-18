@@ -2,16 +2,10 @@
 
 ## Unreleased
 
-- Focused Skill instructions on project facts, meaningful decisions, progress, and verification evidence.
-- Removed mandatory execution tiers and fixed replies; preserved read-only review and sync while allowing authorized follow-through.
-- Clarified state reconciliation and workspace-aware handoffs, with existing project layouts and Protocol 2 unchanged.
-- Replaced exact instruction wording checks with script-focused validation and localized template-copy checks.
-- Separated Skill activation from authorization to persist project files.
-- Made adoption preserve valid custom mappings, reuse partial existing task and decision sources, and create only missing ledgers.
-- Made validation reject missing or unresolved required source mappings.
-- Assigned global task and decision identifier allocation to one active project coordinator.
-- Restored an explicit, lightweight conversation-handoff contract with `READY_TO_HANDOFF`.
-- Added lightweight native Codex task creation, explicit-fork routing, and delivered handoff support without changing project templates or scripts.
+- Adopt new or existing projects with a plain `HARNESS.md`. The team owns its rules and existing records. The setup tools add confirmed links and can read older Protocol 2 mappings.
+- Compare the local map and its linked records with a recipient's Git revision to identify unpublished handoff information.
+- Narrowed skill selection to adoption, conflicting records, handoffs and version questions. Release guidance connects source, package, environment and the effect of rollback on recent data.
+- Preserved existing command names, project histories, and English and Chinese support. Handoffs work through shared files across tools.
 
 ## 2.0.2 - 2026-07-21
 

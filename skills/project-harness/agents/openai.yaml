@@ -1,4 +1,4 @@
 interface:
   display_name: "Project Harness"
-  short_description: "Adaptive project governance for coding agents"
-  default_prompt: "Help me start or continue this project. Inspect its current state first, preserve its files, and keep important tasks, decisions, and next actions organized."
+  short_description: "Set up project records, verify handoffs, and trace releases"
+  default_prompt: "Use $project-harness to check the project records and evidence needed for my setup, handoff, or release question."
