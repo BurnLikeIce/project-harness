@@ -15,7 +15,7 @@ Project Harness 是一个供 AI 助手使用的 skill，用于接入新旧项目
 
 ## 安装当前源码
 
-下载[主分支 ZIP](https://github.com/BurnLikeIce/codex-project-harness/archive/refs/heads/master.zip)，或克隆本仓库。将其中的 `skills/project-harness` 文件夹复制到应用的个人技能目录。本机 Codex 和 Cursor 均支持 `~/.agents/skills/project-harness/SKILL.md`。已有固定安装路径时，更新那一份即可。准备使用时在应用中启用，在新会话中点名 `project-harness` 即可试用。历史正式版本见 [GitHub Releases](https://github.com/BurnLikeIce/codex-project-harness/releases)。
+下载[主分支 ZIP](https://github.com/BurnLikeIce/project-harness/archive/refs/heads/master.zip)，或克隆本仓库。将其中的 `skills/project-harness` 文件夹复制到应用的个人技能目录。本机 Codex 和 Cursor 均支持 `~/.agents/skills/project-harness/SKILL.md`。已有固定安装路径时，更新那一份即可。准备使用时在应用中启用，在新会话中点名 `project-harness` 即可试用。历史正式版本见 [GitHub Releases](https://github.com/BurnLikeIce/project-harness/releases)。
 
 ## 旧项目与版本管理
 

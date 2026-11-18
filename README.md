@@ -15,7 +15,7 @@ Anyone with the shared project can follow `HARNESS.md` without installing this s
 
 ## Install the current source
 
-Download the [main branch ZIP](https://github.com/BurnLikeIce/codex-project-harness/archive/refs/heads/master.zip) or clone this repository. Copy the single `skills/project-harness` directory into your application's personal skills directory. Local Codex and Cursor support `~/.agents/skills/project-harness/SKILL.md`. If you already use a configured installation path, replace that copy and enable it when you are ready. Open a fresh session and request `project-harness` explicitly to try it. For a named older version use [GitHub Releases](https://github.com/BurnLikeIce/codex-project-harness/releases).
+Download the [main branch ZIP](https://github.com/BurnLikeIce/project-harness/archive/refs/heads/master.zip) or clone this repository. Copy the single `skills/project-harness` directory into your application's personal skills directory. Local Codex and Cursor support `~/.agents/skills/project-harness/SKILL.md`. If you already use a configured installation path, replace that copy and enable it when you are ready. Open a fresh session and request `project-harness` explicitly to try it. For a named older version use [GitHub Releases](https://github.com/BurnLikeIce/project-harness/releases).
 
 ## Existing projects and release records
 
